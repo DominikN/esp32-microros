@@ -10,9 +10,8 @@
 const char *ssid = WIFI_SSID;
 const char *password = WIFI_PASS;
 
-// Husarnet credentials
-const char *hostName = HUSARNET_HOSTNAME;
-const char *husarnetJoinCode = HUSARNET_JOINCODE; // find at app.husarnet.com
+// MicroROS Agent IP
+const char *microRosAgentIP = MICROROS_AGENT_IP;
 
 #endif
 #include <micro_ros_arduino.h>
@@ -41,7 +40,6 @@ rcl_node_t node;
 char buffer[500];
 
 #define AGENT_PORT 8888
-#define AGENT_IP "192.168.0.151"
 #define NODE_NAME "talker_esp32"
 
 #if defined(LED_BUILTIN)
@@ -90,7 +88,7 @@ void setup()
   Serial.begin(115200);
 
   Serial.printf("Starting micro_ros (ssid: %s, password: %s)...", ssid, password);
-  set_microros_wifi_transports((char *)ssid, (char *)password, AGENT_IP, AGENT_PORT);
+  set_microros_wifi_transports((char *)ssid, (char *)password, (char *)microRosAgentIP, AGENT_PORT);
   Serial.printf("done\n");
 
 

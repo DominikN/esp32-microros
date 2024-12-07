@@ -18,3 +18,9 @@ monitor:
     #!/bin/bash
     source ./python_venv/bin/activate
     pio run --target monitor
+
+udev:
+    #!/bin/bash
+    # https://docs.platformio.org/en/latest/core/installation/udev-rules.html
+    curl -fsSL https://raw.githubusercontent.com/platformio/platformio-core/develop/platformio/assets/system/99-platformio-udev.rules | sudo tee /etc/udev/rules.d/99-platformio-udev.rules
+    sudo service udev restart
