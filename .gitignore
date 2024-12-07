@@ -1,0 +1,4 @@
+src/credentials.h
+src/*.ino.cpp
+.pio/
+.vscode/
