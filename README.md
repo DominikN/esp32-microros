@@ -22,6 +22,7 @@ cp src/credentials-template.h src/credentials.h
 
 ```bash
 just setup
+just udev
 ```
 
 4. Built and upload the project to ESP32
