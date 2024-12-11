@@ -94,7 +94,7 @@ void timer_callback(rcl_timer_t *timer, int64_t last_call_time)
 void subscription_callback(const void *msgin)
 {
   const std_msgs__msg__String *msg = (const std_msgs__msg__String *)msgin;
-  Serial.printf("I heard: [%s]\r\n", msg->data.data);
+  // Serial.printf("I heard: [%s]\r\n", msg->data.data);
 
   digitalWrite(LED_PIN, !digitalRead(LED_PIN));
   xLastHeartbeatTime = xTaskGetTickCount();
@@ -126,24 +126,24 @@ bool create_entities()
 
   // create subscriber
   RCCHECK(rclc_subscription_init_default(
-      &subscriber,
-      &node,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, String),
-      "chatter2"));
+    &subscriber,
+    &node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, String),
+    "chatter2"));
   msg_in.data = micro_ros_string_utilities_init_with_size(500);
 
-  // // create timer,
-  // RCCHECK(rclc_timer_init_default2(
-  //     &timer,
-  //     &support,
-  //     RCL_MS_TO_NS(500),
-  //     timer_callback,
-  //     true));
+  // create timer,
+  RCCHECK(rclc_timer_init_default2(
+      &timer,
+      &support,
+      RCL_MS_TO_NS(500),
+      timer_callback,
+      true));
 
   // create executor
   executor = rclc_executor_get_zero_initialized_executor();
-  RCCHECK(rclc_executor_init(&executor, &support.context, 5, &allocator));
-  // RCCHECK(rclc_executor_add_timer(&executor, &timer));
+  RCCHECK(rclc_executor_init(&executor, &support.context, 2, &allocator));
+  RCCHECK(rclc_executor_add_timer(&executor, &timer));
   RCCHECK(rclc_executor_add_subscription(&executor, &subscriber, &msg_in, &subscription_callback, ON_NEW_DATA));
 
   if (RMW_RET_OK != rmw_uros_sync_session(2000))
@@ -161,7 +161,7 @@ void destroy_entities()
 
   RCSOFTCHECK(rcl_subscription_fini(&subscriber, &node));
   RCSOFTCHECK(rcl_publisher_fini(&publisher, &node));
-  // RCSOFTCHECK(rcl_timer_fini(&timer));
+  RCSOFTCHECK(rcl_timer_fini(&timer));
   RCSOFTCHECK(rclc_executor_fini(&executor));
   RCSOFTCHECK(rcl_node_fini(&node));
   RCSOFTCHECK(rcl_init_options_fini(&init_options));
@@ -169,6 +169,24 @@ void destroy_entities()
 
   micro_ros_string_utilities_destroy(&(msg_in.data));
 }
+
+void publisherTask(void *pvParameters)
+{
+  static TickType_t xLastWakeTime = xTaskGetTickCount();
+  while (1)
+  {
+    if (pdFALSE == xTaskDelayUntil(&xLastWakeTime, 500))
+    {
+      Serial.printf("publisher loop delayed: %d\r\n", xTaskGetTickCount() - xLastWakeTime);
+      xLastWakeTime = xTaskGetTickCount();
+    }
+    publishHelloWorld();
+  }
+}
+
+// ======================================================
+// Setup and loop
+// ======================================================
 
 void setup()
 {
@@ -187,21 +205,7 @@ void setup()
   create_entities();
   xLastHeartbeatTime = xTaskGetTickCount();
 
-  xTaskCreate(publisherTask, "publisherTask", 4096, NULL, 1, NULL);
-}
-
-void publisherTask(void *pvParameters)
-{
-  static TickType_t xLastWakeTime = xTaskGetTickCount();
-  while (1)
-  {
-    if (pdFALSE == xTaskDelayUntil(&xLastWakeTime, 500))
-    {
-      Serial.printf("publisher loop delayed: %d\r\n", xTaskGetTickCount() - xLastWakeTime);
-      xLastWakeTime = xTaskGetTickCount();
-    }
-    publishHelloWorld();
-  }
+  // xTaskCreate(publisherTask, "publisherTask", 8192, NULL, 1, NULL);
 }
 
 void loop()
@@ -215,9 +219,7 @@ void loop()
     xLastWakeTime = xTaskGetTickCount();
   }
 
-  Serial.printf("hb: %d, last: %d, diff: %d\r\n", xLastHeartbeatTime, xLastWakeTime, xLastWakeTime - xLastHeartbeatTime);
-
-  if (xLastWakeTime - xLastHeartbeatTime > pdMS_TO_TICKS(5000))
+  if (xLastWakeTime - xLastHeartbeatTime > pdMS_TO_TICKS(10000))
   {
     Serial.printf("No heartbeat received for 5s, restarting...");
     destroy_entities();
@@ -237,7 +239,9 @@ void loop()
     xLastHeartbeatTime = xTaskGetTickCount();
   }
 
-  rclc_executor_spin_some(&executor, 0);
+  rclc_executor_spin_some(&executor, RCL_MS_TO_NS(5));
+
+  // Serial.printf("Free heap: %d, hb: %d, last: %d, diff: %d\r\n", ESP.getFreeHeap(), xLastHeartbeatTime, xLastWakeTime, xLastWakeTime - xLastHeartbeatTime);
 };
 
 //   if (state == AGENT_CONNECTED) {
