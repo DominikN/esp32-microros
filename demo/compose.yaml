@@ -1,15 +1,18 @@
 services:
   agent:
     image: microros/micro-ros-agent:jazzy
-    ports:
-      - 8888:8888/udp
+    network_mode: service:husarnet
+    # ports:
+    #   - 8888:8888/udp
     environment:
       XRCE_DOMAIN_ID_OVERRIDE: 32
-    command: udp4 --port 8888
+    # command: udp4 --port 8888
+    command: udp6 --port 8888
 
   listener:
     build:
       dockerfile: Dockerfile.chatter
+    network_mode: service:husarnet
     environment:
       ROS_DOMAIN_ID: 32
     command: ros2 run demo_nodes_cpp listener
@@ -17,6 +20,22 @@ services:
   heartbeat:
     build:
       dockerfile: Dockerfile.chatter
+    network_mode: service:husarnet
     environment:
       ROS_DOMAIN_ID: 32
     command: ros2 run demo_nodes_cpp talker --ros-args -r chatter:=chatter2
+
+  husarnet:
+    image: husarnet/husarnet:2.0.180
+    volumes:
+      - /var/lib/husarnet
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=0
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun
+    environment:
+      - HOSTNAME=husarnet-agent
+      - JOINCODE
+      - HUSARNET_DEBUG=1

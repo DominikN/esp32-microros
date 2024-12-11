@@ -13,6 +13,9 @@ const char *password = WIFI_PASS;
 // MicroROS Agent IP
 const char *microRosAgentIP = MICROROS_AGENT_IP;
 
+const char *husarnetHostname = "esp32test";
+const char *husarnetJoincode = "fc94:b01d:1803:8dd8:b293:5c7d:7639:932a/xxxxxxxxxxxxxxxxxx";
+
 #endif
 #include <micro_ros_arduino.h>
 #include <micro_ros_utilities/string_utilities.h>
@@ -24,6 +27,8 @@ const char *microRosAgentIP = MICROROS_AGENT_IP;
 #include <rclc/executor.h>
 
 #include <std_msgs/msg/string.h>
+
+#include <husarnet.h>
 
 rclc_support_t support;
 rcl_init_options_t init_options;
@@ -40,10 +45,14 @@ char buffer_out[500];
 
 TickType_t xLastHeartbeatTime;
 
+HusarnetClient husarnet;
+
 #define AGENT_PORT 8888
 #define NODE_NAME "talker_esp32"
 #define ROS_NAMESPACE ""
 #define DOMAIN_ID 255 // 255 - use domain id from agent
+
+
 
 #if defined(LED_BUILTIN)
 #define LED_PIN LED_BUILTIN
@@ -126,10 +135,10 @@ bool create_entities()
 
   // create subscriber
   RCCHECK(rclc_subscription_init_default(
-    &subscriber,
-    &node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, String),
-    "chatter2"));
+      &subscriber,
+      &node,
+      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, String),
+      "chatter2"));
   msg_in.data = micro_ros_string_utilities_init_with_size(500);
 
   // create timer,
@@ -193,7 +202,26 @@ void setup()
   Serial.begin(115200);
 
   Serial.printf("Starting micro_ros (ssid: %s, password: %s)...", ssid, password);
-  set_microros_wifi_transports((char *)ssid, (char *)password, (char *)microRosAgentIP, AGENT_PORT);
+  // set_microros_wifi_transports((char *)ssid, (char *)password, (char *)microRosAgentIP, AGENT_PORT);
+  set_microros_wifi_transports((char *)ssid, (char *)password, (char *)"fc94:35c6:6537:085c:8053:bf06:45c2:bc04", AGENT_PORT);
+
+
+  // =============== Husarnet =================
+
+  // Join the Husarnet network
+  husarnet.join(husarnetHostname, husarnetJoincode);
+
+  while (!husarnet.isJoined())
+  {
+    Serial.println("Waiting for Husarnet network...");
+    delay(1000);
+  }
+  Serial.println("Husarnet network joined");
+
+  Serial.print("Husarnet IP: ");
+  Serial.println(husarnet.getIpAddress().c_str());
+
+  // ==========================================
 
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, HIGH);
