@@ -18,6 +18,7 @@ const char *husarnetJoincode = "fc94:b01d:1803:8dd8:b293:5c7d:7639:932a/xxxxxxxx
 
 #endif
 #include <micro_ros_arduino.h>
+
 #include <micro_ros_utilities/string_utilities.h>
 
 #include <stdio.h>
@@ -75,6 +76,22 @@ HusarnetClient husarnet;
     {                            \
     }                            \
   }
+
+// override the set_microros_wifi_transports included from micro_ros_arduino
+void set_microros_wifi_transports_2(char * agent_ip, uint32_t agent_port){
+	static struct micro_ros_agent_locator locator;
+	locator.address.fromString(agent_ip);
+	locator.port = agent_port;
+
+	rmw_uros_set_custom_transport(
+		false,
+		(void *) &locator,
+		arduino_wifi_transport_open,
+		arduino_wifi_transport_close,
+		arduino_wifi_transport_write,
+		arduino_wifi_transport_read
+	);
+}
 
 void publishHelloWorld()
 {
@@ -201,12 +218,22 @@ void setup()
 {
   Serial.begin(115200);
 
-  Serial.printf("Starting micro_ros (ssid: %s, password: %s)...", ssid, password);
-  // set_microros_wifi_transports((char *)ssid, (char *)password, (char *)microRosAgentIP, AGENT_PORT);
-  set_microros_wifi_transports((char *)ssid, (char *)password, (char *)"fc94:35c6:6537:085c:8053:bf06:45c2:bc04", AGENT_PORT);
-
 
   // =============== Husarnet =================
+
+  // Connect to the WiFi network
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  
+  Serial.println("Connecting to WiFi");
+  if (WiFi.waitForConnectResult() != WL_CONNECTED) {
+    Serial.printf("WiFi connection failure (err: %d)\n", WiFi.status());
+    delay(5000);
+    ESP.restart();
+  }
+
+  Serial.print("Local IP: ");
+  Serial.println(WiFi.localIP());
 
   // Join the Husarnet network
   husarnet.join(husarnetHostname, husarnetJoincode);
@@ -222,6 +249,12 @@ void setup()
   Serial.println(husarnet.getIpAddress().c_str());
 
   // ==========================================
+
+  Serial.printf("Starting micro_ros (ssid: %s, password: %s)...", ssid, password);
+  // set_microros_wifi_transports((char *)ssid, (char *)password, (char *)microRosAgentIP, AGENT_PORT);
+  // set_microros_wifi_transports((char *)ssid, (char *)password, (char *)"fc94:35c6:6537:085c:8053:bf06:45c2:bc04", AGENT_PORT);
+
+  set_microros_wifi_transports_2((char *)"fc94:35c6:6537:085c:8053:bf06:45c2:bc04", AGENT_PORT);
 
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, HIGH);
