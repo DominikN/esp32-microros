@@ -14,6 +14,8 @@ const char *password = WIFI_PASS;
 const char *microRosAgentIP = MICROROS_AGENT_IP;
 
 #endif
+
+#include <NeoPixelBus.h>
 #include <micro_ros_arduino.h>
 #include <micro_ros_utilities/string_utilities.h>
 
@@ -24,6 +26,12 @@ const char *microRosAgentIP = MICROROS_AGENT_IP;
 #include <rclc/executor.h>
 
 #include <std_msgs/msg/string.h>
+#include <sensor_msgs/msg/image.h>
+
+
+// #include "methods/NeoEsp32I2sMethod.h"
+
+NeoPixelBus<NeoRgbFeature, NeoEsp32LcdX8Ws2811Method> ledStrip(100, 14); // note: older WS2811 and longer strip
 
 rclc_support_t support;
 rcl_init_options_t init_options;
@@ -33,8 +41,11 @@ rclc_executor_t executor;
 rcl_allocator_t allocator;
 rcl_publisher_t publisher;
 rcl_subscription_t subscriber;
+rcl_subscription_t subscriber_led;
 std_msgs__msg__String msg_in;
 std_msgs__msg__String msg_out;
+
+sensor_msgs__msg__Image image_msg;
 
 char buffer_out[500];
 
@@ -66,6 +77,44 @@ TickType_t xLastHeartbeatTime;
     {                            \
     }                            \
   }
+
+// override the set_microros_wifi_transports included from micro_ros_arduino
+void set_microros_wifi_transports_2(char * agent_ip, uint32_t agent_port){
+	static struct micro_ros_agent_locator locator;
+	locator.address.fromString(agent_ip);
+	locator.port = agent_port;
+
+	rmw_uros_set_custom_transport(
+		false,
+		(void *) &locator,
+		arduino_wifi_transport_open,
+		arduino_wifi_transport_close,
+		arduino_wifi_transport_write,
+		arduino_wifi_transport_read
+	);
+}
+
+void ImageMsgInit(sensor_msgs__msg__Image *arg_message) {
+  size_t number_of_leds = 48;
+  // Initialize the header
+  arg_message->header.frame_id.data = (char *)malloc(100 * sizeof(char));
+  strcpy(arg_message->header.frame_id.data, "led_strip_frame");
+  arg_message->header.frame_id.capacity = 100;
+  arg_message->header.frame_id.size = strlen(arg_message->header.frame_id.data);
+
+  // Initialize other fields
+  arg_message->height = 1;
+  arg_message->width = number_of_leds;
+  arg_message->encoding.data = (char *)malloc(number_of_leds * sizeof(char));
+  strcpy(arg_message->encoding.data, "rgba8");
+  arg_message->encoding.capacity = 10;
+  arg_message->encoding.size = strlen(arg_message->encoding.data);
+  arg_message->is_bigendian = 0;
+  arg_message->step = number_of_leds * 4; // 18 * 3 for RGB
+  arg_message->data.capacity = number_of_leds * 4;
+  arg_message->data.size = number_of_leds * 4;
+  arg_message->data.data = (uint8_t *)malloc(number_of_leds * 4 * sizeof(uint8_t));
+}
 
 void publishHelloWorld()
 {
@@ -100,6 +149,50 @@ void subscription_callback(const void *msgin)
   xLastHeartbeatTime = xTaskGetTickCount();
 }
 
+// void subscription_led_callback(const void *msgin)
+// {
+//   Serial.println("Received image");
+//   const sensor_msgs__msg__Image * img = (const sensor_msgs__msg__Image *)msgin;
+//   uint8_t StripLength = ledStrip.PixelCount();
+
+//   // Assuming PixelStrip is an object that handles the LED strip
+//   for (int i = 0; i < StripLength; i++) {
+//     uint8_t red = img->data.data[4 * i];
+//     uint8_t green = img->data.data[4 * i + 1];
+//     uint8_t blue = img->data.data[4 * i + 2];
+//     ledStrip.SetPixelColor(i, RgbColor(red, green, blue));      // red
+//   }
+//   ledStrip.Show();
+//   xLastHeartbeatTime = xTaskGetTickCount();
+// }
+
+void subscription_led_callback(const void *msgin)
+{
+    Serial.println("Received image");
+    const sensor_msgs__msg__Image * img = (const sensor_msgs__msg__Image *)msgin;
+    uint8_t StripLength = ledStrip.PixelCount(); // This should be 100
+
+    // Assuming the message has fewer pixels (48) than the LED strip (100)
+    uint8_t messagePixelCount = 48;
+
+    for (int i = 0; i < StripLength; i++) {
+        // Map LED index to message pixel index
+        int mappedIndex = (i * messagePixelCount) / StripLength;
+
+        // Ensure we don't exceed the message bounds
+        uint8_t red = img->data.data[4 * mappedIndex];
+        uint8_t green = img->data.data[4 * mappedIndex + 1];
+        uint8_t blue = img->data.data[4 * mappedIndex + 2];
+
+        // Set the LED color based on the mapped message data
+        ledStrip.SetPixelColor(i, RgbColor(red, green, blue));
+    }
+
+    ledStrip.Show();
+    xLastHeartbeatTime = xTaskGetTickCount();
+}
+
+
 // Functions create_entities and destroy_entities can take several seconds.
 // In order to reduce this rebuild the library with
 // - RMW_UXRCE_ENTITY_CREATION_DESTROY_TIMEOUT=0
@@ -132,6 +225,13 @@ bool create_entities()
     "chatter2"));
   msg_in.data = micro_ros_string_utilities_init_with_size(500);
 
+  RCCHECK(rclc_subscription_init_default(
+    &subscriber_led,
+    &node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Image),
+    "panther/lights/channel_1_frame"));
+  ImageMsgInit(&image_msg); 
+
   // create timer,
   RCCHECK(rclc_timer_init_default2(
       &timer,
@@ -142,9 +242,10 @@ bool create_entities()
 
   // create executor
   executor = rclc_executor_get_zero_initialized_executor();
-  RCCHECK(rclc_executor_init(&executor, &support.context, 2, &allocator));
+  RCCHECK(rclc_executor_init(&executor, &support.context, 3, &allocator));
   RCCHECK(rclc_executor_add_timer(&executor, &timer));
   RCCHECK(rclc_executor_add_subscription(&executor, &subscriber, &msg_in, &subscription_callback, ON_NEW_DATA));
+  RCCHECK(rclc_executor_add_subscription(&executor, &subscriber_led, &image_msg, &subscription_led_callback, ON_NEW_DATA));
 
   if (RMW_RET_OK != rmw_uros_sync_session(2000))
   {
@@ -160,6 +261,7 @@ void destroy_entities()
   (void)rmw_uros_set_context_entity_destroy_session_timeout(rmw_context, 0);
 
   RCSOFTCHECK(rcl_subscription_fini(&subscriber, &node));
+  RCSOFTCHECK(rcl_subscription_fini(&subscriber_led, &node));
   RCSOFTCHECK(rcl_publisher_fini(&publisher, &node));
   RCSOFTCHECK(rcl_timer_fini(&timer));
   RCSOFTCHECK(rclc_executor_fini(&executor));
@@ -192,8 +294,31 @@ void setup()
 {
   Serial.begin(115200);
 
+  ledStrip.Begin();
+
+  for(int i=0; i<100; i++) {
+    ledStrip.SetPixelColor(i, RgbColor(20, 20, 20));      // red
+  }
+  ledStrip.Show();
+
+  Serial.printf("Connecting to WiFi (ssid: %s, password: %s)...", ssid, password);
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  
+  if (WiFi.waitForConnectResult() != WL_CONNECTED) {
+    Serial.printf("WiFi connection failure (err: %d)\n", WiFi.status());
+    delay(5000);
+    ESP.restart();
+  }
+
+  Serial.print("Local IP: ");
+  Serial.println(WiFi.localIP());
+
   Serial.printf("Starting micro_ros (ssid: %s, password: %s)...", ssid, password);
-  set_microros_wifi_transports((char *)ssid, (char *)password, (char *)microRosAgentIP, AGENT_PORT);
+  // set_microros_wifi_transports((char *)ssid, (char *)password, (char *)microRosAgentIP, AGENT_PORT);
+
+  set_microros_wifi_transports_2((char *)microRosAgentIP, AGENT_PORT);
 
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, HIGH);
@@ -219,7 +344,7 @@ void loop()
     xLastWakeTime = xTaskGetTickCount();
   }
 
-  if (xLastWakeTime - xLastHeartbeatTime > pdMS_TO_TICKS(10000))
+  if (xLastWakeTime - xLastHeartbeatTime > pdMS_TO_TICKS(5000))
   {
     Serial.printf("No heartbeat received for 5s, restarting...");
     destroy_entities();

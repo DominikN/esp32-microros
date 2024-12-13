@@ -3,3 +3,5 @@ src/*.ino.cpp
 .pio/
 .vscode/
 python_venv/
+
+**/.env
