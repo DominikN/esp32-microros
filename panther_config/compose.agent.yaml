@@ -1,0 +1,13 @@
+services:  
+  agent:
+    image: microros/micro-ros-agent:humble
+    # build:
+    #   dockerfile: Dockerfile.agent
+    # network_mode: host
+    # ipc: host
+    ports:
+      - 8888:8888/udp
+    environment:
+      XRCE_DOMAIN_ID_OVERRIDE: 0
+      # RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+    command: udp4 --port 8888

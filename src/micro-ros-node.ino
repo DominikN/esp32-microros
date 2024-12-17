@@ -296,10 +296,10 @@ void setup()
 
   ledStrip.Begin();
 
-  for(int i=0; i<100; i++) {
-    ledStrip.SetPixelColor(i, RgbColor(20, 20, 20));      // red
-  }
-  ledStrip.Show();
+  // for(int i=0; i<100; i++) {
+  //   ledStrip.SetPixelColor(i, RgbColor(20, 20, 20));      // red
+  // }
+  // ledStrip.Show();
 
   Serial.printf("Connecting to WiFi (ssid: %s, password: %s)...", ssid, password);
 
